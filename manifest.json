@@ -1,0 +1,49 @@
+{
+  "manifest_version": 3,
+  "name": "kintone フィールドコード表示",
+  "version": "1.0.0",
+  "description": "kintoneで現在表示しているフィールドのフィールドコードを画面に表示・非表示切り替えるツール",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": [
+    "https://*.cybozu.com/*",
+    "https://*.cybozu.biz/*",
+    "https://*.kintone.com/*",
+    "https://*.s.cybozu.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": [
+        "https://*.cybozu.com/*",
+        "https://*.cybozu.biz/*",
+        "https://*.kintone.com/*",
+        "https://*.s.cybozu.com/*"
+      ]
+    }
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.cybozu.com/*",
+        "https://*.cybozu.biz/*",
+        "https://*.kintone.com/*",
+        "https://*.s.cybozu.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
