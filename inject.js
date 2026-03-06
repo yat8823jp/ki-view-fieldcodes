@@ -116,12 +116,22 @@
     return containers;
   }
 
+  function getKintone() {
+    const w = typeof window !== 'undefined' ? window : null;
+    if (!w) return null;
+    if (typeof w.kintone !== 'undefined' && w.kintone) return w.kintone;
+    const top = w.top;
+    if (top && top !== w && typeof top.kintone !== 'undefined') return top.kintone;
+    return null;
+  }
+
   function waitForKintone(maxWaitMs) {
     maxWaitMs = maxWaitMs || 10000;
     const interval = 200;
     return new Promise((resolve) => {
       const check = () => {
-        if (typeof kintone !== 'undefined' && kintone.getPageType) {
+        const k = getKintone();
+        if (k && k.getPageType) {
           resolve();
           return;
         }
@@ -141,35 +151,209 @@
     return /\/k\/\d+(\/|$)/.test(path) && !/\/admin\//.test(path);
   }
 
+  function getAppIdFromUrl() {
+    const path = window.location.pathname || '';
+    const m = path.match(/\/k\/(\d+)(?:\/|$)/);
+    if (m) return m[1];
+    const hash = window.location.hash || '';
+    const m2 = hash.match(/[/#](\d+)(?:\/|$)/);
+    if (m2) return m2[1];
+    return null;
+  }
+
   function showFieldCodes() {
     addStyles();
     const badges = document.querySelectorAll(`.${BADGE_CLASS}`);
     badges.forEach((b) => b.classList.remove(`${BADGE_CLASS}-hidden`));
+    const panel = document.getElementById(PANEL_ID);
+    if (panel) panel.style.display = '';
     if (badges.length > 0) return;
+
     if (!isAppRecordPage()) return;
 
     waitForKintone().then(() => {
-      if (typeof kintone === 'undefined' || !kintone.getPageType) {
-        return;
-      }
+      const k = getKintone();
+      if (!k) return;
 
-      kintone.getPageType().then((result) => {
-      const page = result?.page || '';
-      try {
-        if (RECORD_DETAIL_PAGES.includes(page)) {
-          showRecordPageFieldCodes();
-        } else if (RECORD_EDIT_PAGES.includes(page)) {
-          showEditPageFieldCodes();
-        } else if (LIST_PAGES.includes(page)) {
-          showListPageFieldCodes();
+      setTimeout(showFieldCodesPanel, 300);
+
+      if (!k.getPageType) return;
+      k.getPageType().then((result) => {
+        const page = result?.page || '';
+        try {
+          if (RECORD_DETAIL_PAGES.includes(page)) {
+            showRecordPageFieldCodes();
+          } else if (RECORD_EDIT_PAGES.includes(page)) {
+            showEditPageFieldCodes();
+          } else if (LIST_PAGES.includes(page)) {
+            showListPageFieldCodes();
+          }
+        } catch (e) {
+          console.warn('[kintone-fieldcode] フィールドコードの取得に失敗しました:', e);
         }
-      } catch (e) {
-        console.warn('[kintone-fieldcode] フィールドコードの取得に失敗しました:', e);
+      }).catch((e) => {
+        console.warn('[kintone-fieldcode] ページタイプの取得に失敗:', e);
+      });
+    });
+  }
+
+  function showFieldCodesPanel(retryCount) {
+    retryCount = retryCount || 0;
+    const k = getKintone();
+    if (!k) return;
+    const appId = getAppIdFromUrl() || (k.app?.getId?.() ? String(k.app.getId()) : null);
+    if (!appId) {
+      if (retryCount < 5) setTimeout(() => showFieldCodesPanel(retryCount + 1), 500);
+      return;
+    }
+
+    const fetchLayout = () => {
+      const getFormLayout = k.app?.getFormLayout?.bind(k.app);
+      if (getFormLayout) return getFormLayout().catch(() => null);
+      return Promise.resolve(null);
+    };
+    const fetchApi = () => {
+      if (!k.api?.url) return Promise.reject(new Error('No API'));
+      return k.api(k.api.url('/k/v1/app/form/layout.json', true), 'GET', { app: appId })
+        .catch(() => k.api(k.api.url('/k/v1/app/form/fields.json', true), 'GET', { app: appId }));
+    };
+
+    fetchLayout()
+      .then((r) => (r ? r : fetchApi()))
+      .then((resp) => {
+        let fieldCodes = [];
+        if (resp?.properties) {
+          fieldCodes = Object.keys(resp.properties).filter((c) => !/^__/.test(c));
+        } else if (resp) {
+          const layout = resp?.layout ?? resp;
+          const arr = Array.isArray(layout) ? layout : (layout ? [layout] : []);
+          fieldCodes = collectFieldCodesFromLayout(arr);
+        }
+        if (fieldCodes.length > 0) showFieldCodesPanelUI(fieldCodes);
+      })
+      .catch(() => {
+        if (retryCount < 3) setTimeout(() => showFieldCodesPanel(retryCount + 1), 1000);
+      });
+  }
+
+  const PANEL_ID = 'kintone-fieldcode-fallback-panel';
+  const PANEL_TOGGLE_ID = 'kintone-fieldcode-panel-toggle';
+
+  function showFieldCodesPanelUI(fieldCodes) {
+    let panel = document.getElementById(PANEL_ID);
+    if (!panel) {
+      panel = document.createElement('div');
+      panel.id = PANEL_ID;
+      panel.style.cssText = 'position:fixed;top:60px;right:16px;max-width:280px;max-height:70vh;overflow:auto;background:#fff;border:1px solid #ccc;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:12px;z-index:2147483647;font-size:12px;';
+      const header = document.createElement('div');
+      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;';
+      const title = document.createElement('div');
+      title.style.fontWeight = '600';
+      title.textContent = 'フィールドコード一覧';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '×';
+      closeBtn.title = 'パネルを閉じる';
+      closeBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 4px;color:#666;';
+      closeBtn.addEventListener('click', () => toggleFieldCodePanel(false));
+      header.appendChild(title);
+      header.appendChild(closeBtn);
+      panel.appendChild(header);
+      document.body.appendChild(panel);
+    }
+    const old = panel.querySelector('.kintone-fieldcode-list');
+    if (old) old.remove();
+    const list = document.createElement('div');
+    list.className = 'kintone-fieldcode-list';
+    list.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;';
+    fieldCodes.forEach((code) => {
+      const badge = createBadge(code);
+      badge.style.margin = '0';
+      list.appendChild(badge);
+    });
+    panel.appendChild(list);
+    toggleFieldCodePanel(true);
+  }
+
+  function toggleFieldCodePanel(show) {
+    const panel = document.getElementById(PANEL_ID);
+    let toggleBtn = document.getElementById(PANEL_TOGGLE_ID);
+    if (show) {
+      if (panel) panel.style.display = '';
+      if (toggleBtn) toggleBtn.style.display = 'none';
+    } else {
+      if (panel) panel.style.display = 'none';
+      if (!toggleBtn) {
+        toggleBtn = document.createElement('button');
+        toggleBtn.id = PANEL_TOGGLE_ID;
+        toggleBtn.textContent = 'フィールドコード';
+        toggleBtn.title = 'フィールドコード一覧を表示';
+        toggleBtn.style.cssText = 'position:fixed;top:60px;right:16px;padding:6px 12px;font-size:12px;background:#fca000;color:#000;border:none;border-radius:6px;cursor:pointer;z-index:2147483647;box-shadow:0 2px 6px rgba(0,0,0,0.2);';
+        toggleBtn.addEventListener('click', () => toggleFieldCodePanel(true));
+        document.body.appendChild(toggleBtn);
       }
-    }).catch((e) => {
-      console.warn('[kintone-fieldcode] ページタイプの取得に失敗:', e);
+      toggleBtn.style.display = '';
+    }
+  }
+
+  function getSubtableFieldCodesFromLayout(layout, tableCode) {
+    if (!layout || !Array.isArray(layout)) return [];
+    for (const row of layout) {
+      if (row.type === 'SUBTABLE' && row.code === tableCode && row.fields) {
+        return row.fields.filter((f) => f.code).map((f) => f.code);
+      }
+      if (row.type === 'GROUP' && row.layout) {
+        const found = getSubtableFieldCodesFromLayout(row.layout, tableCode);
+        if (found.length) return found;
+      }
+    }
+    return [];
+  }
+
+  function resolveTableElement(fieldEl) {
+    if (!fieldEl) return null;
+    return fieldEl.tagName === 'TABLE' ? fieldEl : fieldEl.querySelector?.('table') || null;
+  }
+
+  function applySubtableBadges(tableEl, innerFieldCodes) {
+    const table = resolveTableElement(tableEl);
+    if (!table) return false;
+    const headerRow = table.tHead?.rows?.[0];
+    const tbody = table.tBodies?.[0];
+    const firstRow = headerRow || tbody?.rows?.[0];
+    if (!firstRow || !firstRow.cells || firstRow.cells.length === 0) return false;
+    const cellCount = Math.min(firstRow.cells.length, innerFieldCodes.length);
+    for (let i = 0; i < cellCount; i++) {
+      const cell = firstRow.cells[i];
+      if (cell.querySelector(`.${BADGE_CLASS}`)) continue;
+      const badge = createBadge(innerFieldCodes[i]);
+      cell.style.position = cell.style.position || 'relative';
+      cell.insertBefore(badge, cell.firstChild);
+    }
+    return cellCount > 0;
+  }
+
+  function waitForSubtableAndApply(tableEl, innerFieldCodes) {
+    const tryApply = () => applySubtableBadges(tableEl, innerFieldCodes);
+    if (tryApply()) return;
+
+    const observer = new MutationObserver(() => {
+      if (tryApply()) observer.disconnect();
     });
-    });
+
+    const table = resolveTableElement(tableEl);
+    const target = table?.tBodies?.[0] || tableEl;
+    observer.observe(target, { childList: true, subtree: true });
+
+    const poll = setInterval(() => {
+      if (tryApply()) {
+        clearInterval(poll);
+        observer.disconnect();
+      }
+    }, 200);
+    setTimeout(() => {
+      clearInterval(poll);
+      observer.disconnect();
+    }, 8000);
   }
 
   function showRecordPageFieldCodes() {
@@ -183,20 +367,53 @@
 
       if (!getFieldElement) return;
 
-      for (const fieldCode of Object.keys(record)) {
-        if (['__REVISION__', '$id', '$revision'].includes(fieldCode)) continue;
-        const fieldInfo = record[fieldCode];
-        if (!fieldInfo || typeof fieldInfo !== 'object') continue;
-
-        const fieldEl = getFieldElement(fieldCode);
-        if (!fieldEl || fieldEl.querySelector(`.${BADGE_CLASS}`)) continue;
-
-        const badge = createBadge(fieldCode);
-        fieldEl.style.position = fieldEl.style.position || 'relative';
-        fieldEl.insertBefore(badge, fieldEl.firstChild);
+      const getFormLayout = kintone.app.getFormLayout?.bind(kintone.app);
+      let layoutData = null;
+      if (getFormLayout) {
+        getFormLayout().then((layout) => {
+          layoutData = layout?.layout ?? layout;
+          showRecordPageFieldCodesCore(record, getFieldElement, layoutData);
+        }).catch(() => {
+          showRecordPageFieldCodesCore(record, getFieldElement, null);
+        });
+      } else {
+        showRecordPageFieldCodesCore(record, getFieldElement, null);
       }
     } catch (e) {
       console.warn('[kintone-fieldcode] レコード画面の処理に失敗:', e);
+    }
+  }
+
+  function showRecordPageFieldCodesCore(record, getFieldElement, layoutData) {
+    const layout = Array.isArray(layoutData) ? layoutData : (layoutData ? [layoutData] : []);
+
+    for (const fieldCode of Object.keys(record)) {
+      if (['__REVISION__', '$id', '$revision'].includes(fieldCode)) continue;
+      const fieldInfo = record[fieldCode];
+      if (!fieldInfo || typeof fieldInfo !== 'object') continue;
+
+      if (fieldInfo.type === 'SUBTABLE') {
+        const tableEl = getFieldElement(fieldCode);
+        if (!tableEl || tableEl.querySelector(`.${BADGE_CLASS}`)) continue;
+
+        const rows = fieldInfo.value || [];
+        const firstRowData = rows[0];
+        const fromLayout = getSubtableFieldCodesFromLayout(layout, fieldCode);
+        const innerFieldCodes = fromLayout.length > 0
+          ? fromLayout
+          : (firstRowData?.value ? Object.keys(firstRowData.value) : []);
+        if (innerFieldCodes.length === 0) continue;
+
+        waitForSubtableAndApply(tableEl, innerFieldCodes);
+        continue;
+      }
+
+      const fieldEl = getFieldElement(fieldCode);
+      if (!fieldEl || fieldEl.querySelector(`.${BADGE_CLASS}`)) continue;
+
+      const badge = createBadge(fieldCode);
+      fieldEl.style.position = fieldEl.style.position || 'relative';
+      fieldEl.insertBefore(badge, fieldEl.firstChild);
     }
   }
 
@@ -226,7 +443,8 @@
 
     return getFormLayout().then((layout) => {
       const layoutData = layout?.layout ?? layout;
-      const fieldCodes = collectFieldCodesFromLayout(Array.isArray(layoutData) ? layoutData : [layoutData]);
+      const layoutArr = Array.isArray(layoutData) ? layoutData : [layoutData];
+      const fieldCodes = collectFieldCodesFromLayout(layoutArr);
       const containers = getEditFormFieldContainers();
       const minLen = Math.min(fieldCodes.length, containers.length);
       for (let i = 0; i < minLen; i++) {
@@ -353,19 +571,35 @@
   function hideFieldCodes() {
     const badges = document.querySelectorAll(`.${BADGE_CLASS}`);
     badges.forEach((b) => b.classList.add(`${BADGE_CLASS}-hidden`));
+    const panel = document.getElementById(PANEL_ID);
+    if (panel) panel.style.display = 'none';
+    const toggleBtn = document.getElementById(PANEL_TOGGLE_ID);
+    if (toggleBtn) toggleBtn.style.display = 'none';
   }
 
   function removeFieldCodes() {
     const badges = document.querySelectorAll(`.${BADGE_CLASS}`);
     badges.forEach((b) => b.remove());
+    const panel = document.getElementById(PANEL_ID);
+    if (panel) panel.remove();
+    const toggleBtn = document.getElementById(PANEL_TOGGLE_ID);
+    if (toggleBtn) toggleBtn.remove();
   }
 
   function toggle(show) {
+    window.__kintoneFieldCodeVisible = show;
     if (show) {
       removeFieldCodes();
       showFieldCodes();
     } else {
       hideFieldCodes();
+    }
+  }
+
+  function onPageChange() {
+    if (window.__kintoneFieldCodeVisible) {
+      removeFieldCodes();
+      setTimeout(showFieldCodes, 150);
     }
   }
 
@@ -378,4 +612,22 @@
 
   window.__kintoneFieldCodeToggle = toggle;
   document.dispatchEvent(new CustomEvent('kintone-fieldcode-ready'));
+
+  waitForKintone().then(() => {
+    const k = getKintone();
+    if (!k || !k.events || !k.events.on) return;
+    const navEvents = [
+      'app.record.detail.show',
+      'app.record.edit.show',
+      'app.record.create.show',
+      'app.record.index.show',
+      'app.record.print.show'
+    ];
+    navEvents.forEach((ev) => {
+      k.events.on(ev, (e) => {
+        onPageChange();
+        return e;
+      });
+    });
+  });
 })();
