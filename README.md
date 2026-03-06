@@ -30,6 +30,12 @@ kintone で現在表示しているフィールドのフィールドコードを
 - Chrome（Manifest V3 対応）
 - kintone（cybozu.com / cybozu.biz / kintone.com）
 
+## プライバシーポリシー
+
+[PRIVACY_POLICY.md](PRIVACY_POLICY.md) をご確認ください。
+
+Chrome Web Store 公開時は、`privacy-policy.html` を GitHub Pages 等でホストし、その URL を登録してください。
+
 ## 注意事項
 
 - テーブル内のフィールド、関連レコード、ステータス、作業者など、一部のフィールドは kintone API の制限により取得できない場合があります
