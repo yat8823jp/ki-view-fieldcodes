@@ -13,24 +13,24 @@
     const style = document.createElement('style');
     style.id = BADGE_STYLE_ID;
     style.textContent = `
-      .${BADGE_CLASS} {
-        display: inline-block;
-        padding: 2px 6px;
-        margin-right: 8px;
-        margin-bottom: 4px;
-        font-size: 11px;
-        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
-        background: #FF6B35;
-        color: white;
-        border-radius: 4px;
-        font-weight: 500;
-        vertical-align: middle;
-        cursor: pointer;
-      }
-      .${BADGE_CLASS}-hidden {
-        display: none !important;
-      }
-    `;
+.${BADGE_CLASS} {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-right: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+  background: #fca000;
+  color: black;
+  border-radius: 4px;
+  font-weight: 500;
+  vertical-align: middle;
+  cursor: pointer;
+}
+.${BADGE_CLASS}-hidden {
+  display: none !important;
+}
+`;
     document.head.appendChild(style);
   }
 
