@@ -239,6 +239,17 @@
   const PANEL_ID = 'kintone-fieldcode-fallback-panel';
   const PANEL_TOGGLE_ID = 'kintone-fieldcode-panel-toggle';
 
+  function copyAllPanelFieldCodesToClipboard() {
+    const panel = document.getElementById(PANEL_ID);
+    if (!panel) return '';
+    const list = panel.querySelector('.kintone-fieldcode-list');
+    if (!list) return '';
+    const codes = Array.from(list.querySelectorAll(`.${BADGE_CLASS}`))
+      .map((b) => (b.dataset.fieldCode || b.textContent || '').trim())
+      .filter(Boolean);
+    return codes.join('\n');
+  }
+
   function showFieldCodesPanelUI(fieldCodes) {
     let panel = document.getElementById(PANEL_ID);
     if (!panel) {
@@ -246,17 +257,42 @@
       panel.id = PANEL_ID;
       panel.style.cssText = 'position:fixed;top:60px;right:16px;max-width:280px;max-height:70vh;overflow:auto;background:#fff;border:1px solid #ccc;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.15);padding:12px;z-index:2147483647;font-size:12px;';
       const header = document.createElement('div');
-      header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;';
+      header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
       const title = document.createElement('div');
-      title.style.fontWeight = '600';
+      title.style.cssText = 'font-weight:600;flex:1;min-width:0;';
       title.textContent = 'フィールドコード一覧';
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex;align-items:center;gap:4px;flex-shrink:0;';
+      const copyAllBtn = document.createElement('button');
+      copyAllBtn.type = 'button';
+      copyAllBtn.textContent = '一括コピー';
+      copyAllBtn.title = '一覧のフィールドコードをすべてコピー（改行区切り）';
+      copyAllBtn.style.cssText = 'font-size:11px;padding:4px 8px;cursor:pointer;background:#f5f5f5;border:1px solid #ccc;border-radius:4px;color:#333;';
+      copyAllBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const text = copyAllPanelFieldCodesToClipboard();
+        if (!text) return;
+        try {
+          await navigator.clipboard.writeText(text);
+          const prev = copyAllBtn.textContent;
+          copyAllBtn.textContent = 'コピーしました';
+          setTimeout(() => { copyAllBtn.textContent = prev; }, 1500);
+        } catch (err) {
+          const prev = copyAllBtn.textContent;
+          copyAllBtn.textContent = '失敗';
+          setTimeout(() => { copyAllBtn.textContent = prev; }, 1500);
+        }
+      });
       const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
       closeBtn.textContent = '×';
       closeBtn.title = 'パネルを閉じる';
       closeBtn.style.cssText = 'background:none;border:none;cursor:pointer;font-size:18px;line-height:1;padding:0 4px;color:#666;';
       closeBtn.addEventListener('click', () => toggleFieldCodePanel(false));
+      actions.appendChild(copyAllBtn);
+      actions.appendChild(closeBtn);
       header.appendChild(title);
-      header.appendChild(closeBtn);
+      header.appendChild(actions);
       panel.appendChild(header);
       document.body.appendChild(panel);
     }
